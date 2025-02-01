@@ -1,4 +1,6 @@
 #以下代码改自https://github.com/rockchip-linux/rknn-toolkit2/tree/master/examples/onnx/yolov5
+import time
+
 import cv2
 import numpy as np
 
@@ -208,7 +210,9 @@ def myFunc(rknn_lite, IMG):
     input_data = input_data / 255.
 
     try:
+        start_time = time.time()
         outputs = rknn_lite.inference(inputs=[input_data])
+        print("inference time: ", time.time() - start_time)
     except Exception as e:
         print("error: ", e)
 
