@@ -209,9 +209,6 @@ def myFunc(rknn_lite, IMG):
 
     try:
         outputs = rknn_lite.inference(inputs=[input_data])
-        print(" --------------------------------- ")
-        print(" outputs: ", outputs)
-        print(" --------------------------------- ")
     except Exception as e:
         print("error: ", e)
 
