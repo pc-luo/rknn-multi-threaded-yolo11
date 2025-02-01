@@ -203,6 +203,10 @@ def myFunc(rknn_lite, IMG):
     # 强制放缩
     IMG = cv2.resize(IMG, (IMG_SIZE, IMG_SIZE))
 
+    input_data = IMG.transpose((2, 0, 1))
+    input_data = input_data.reshape(1, *input_data.shape).astype(np.float32)
+    input_data = input_data / 255.
+
     try:
         outputs = rknn_lite.inference(inputs=[IMG])
         print(" --------------------------------- ")
