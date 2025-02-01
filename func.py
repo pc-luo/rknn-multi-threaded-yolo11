@@ -211,6 +211,9 @@ def myFunc(rknn_lite, IMG):
     except Exception as e:
         print("error: ", e)
 
+    if outputs is None:
+        return IMG
+
     input0_data = outputs[0].reshape([3, -1]+list(outputs[0].shape[-2:]))
     input1_data = outputs[1].reshape([3, -1]+list(outputs[1].shape[-2:]))
     input2_data = outputs[2].reshape([3, -1]+list(outputs[2].shape[-2:]))
