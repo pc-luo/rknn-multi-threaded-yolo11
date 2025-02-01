@@ -208,7 +208,7 @@ def myFunc(rknn_lite, IMG):
     input_data = input_data / 255.
 
     try:
-        outputs = rknn_lite.inference(inputs=[IMG])
+        outputs = rknn_lite.inference(inputs=[input_data])
         print(" --------------------------------- ")
         print(" outputs: ", outputs)
         print(" --------------------------------- ")
