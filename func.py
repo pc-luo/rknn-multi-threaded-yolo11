@@ -206,6 +206,7 @@ def myFunc(rknn_lite, IMG):
 
     print(" --------------------------------- ")
     print(" outputs: ", outputs)
+    print(" img: ", IMG)
     print(" --------------------------------- ")
 
     input0_data = outputs[0].reshape([3, -1]+list(outputs[0].shape[-2:]))
