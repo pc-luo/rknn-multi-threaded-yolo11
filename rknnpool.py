@@ -11,13 +11,13 @@ def initRKNN(rknnModel="./rknnModel/yolov5s.rknn", id=0):
         print("Load RKNN rknnModel failed")
         exit(ret)
     if id == 0:
-        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_0, target="rk3588", perf_mode="normal")
+        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_0, target="rk3588")
     elif id == 1:
-        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_1, target="rk3588", perf_mode="normal")
+        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_1, target="rk3588")
     elif id == 2:
-        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_2, target="rk3588", perf_mode="normal")
+        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_2, target="rk3588")
     elif id == -1:
-        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_0_1_2, target="rk3588", perf_mode="normal")
+        ret = rknn_lite.init_runtime(core_mask=RKNNLite.NPU_CORE_0_1_2, target="rk3588")
     else:
         ret = rknn_lite.init_runtime()
     if ret != 0:
