@@ -202,12 +202,14 @@ def myFunc(rknn_lite, IMG):
     # IMG = letterbox(IMG)
     # 强制放缩
     IMG = cv2.resize(IMG, (IMG_SIZE, IMG_SIZE))
-    outputs = rknn_lite.inference(inputs=[IMG])
 
-    print(" --------------------------------- ")
-    print(" outputs: ", outputs)
-    print(" img: ", IMG)
-    print(" --------------------------------- ")
+    try:
+        outputs = rknn_lite.inference(inputs=[IMG])
+        print(" --------------------------------- ")
+        print(" outputs: ", outputs)
+        print(" --------------------------------- ")
+    except Exception as e:
+        print("error: ", e)
 
     input0_data = outputs[0].reshape([3, -1]+list(outputs[0].shape[-2:]))
     input1_data = outputs[1].reshape([3, -1]+list(outputs[1].shape[-2:]))
