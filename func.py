@@ -202,7 +202,6 @@ def myFunc(rknn_lite, IMG):
     # IMG = letterbox(IMG)
     # 强制放缩
     IMG = cv2.resize(IMG, (IMG_SIZE, IMG_SIZE))
-    IMG = IMG.reshape((1, 224, 224, 3))
 
     try:
         outputs = rknn_lite.inference(inputs=[IMG])
