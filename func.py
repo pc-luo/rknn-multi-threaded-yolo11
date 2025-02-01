@@ -211,7 +211,7 @@ def myFunc(rknn_lite, IMG):
 
     try:
         start_time = time.time()
-        outputs = rknn_lite.inference(inputs=[np.expand_dims(input_data, 0)])
+        outputs = rknn_lite.inference(inputs=[input_data])
         print("inference time: ", time.time() - start_time)
     except Exception as e:
         print("error: ", e)
