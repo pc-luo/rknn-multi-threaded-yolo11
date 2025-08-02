@@ -23,10 +23,9 @@ IMG_SIZE = (640, 640)
 
 from collections import defaultdict
 detection_history = defaultdict(list)  # 格式: {"目标名": [帧1结果, 帧2结果...]}
-FRAME_WINDOW_SIZE = 10  # 滑动窗口大小（帧数）
+FRAME_WINDOW_SIZE = 5  # 滑动窗口大小（帧数）
 MIN_DETECT_COUNT = 3   # 最小确认次数
-confirmed_targets = {}  # 格式: {"目标ID": {"classes": "person", "last_seen": timestamp}}
-TARGET_TIMEOUT = 10.0 
+
 
 # The follew two param is for map test
 # OBJ_THRESH = 0.001
@@ -247,15 +246,9 @@ def post_process(input_data):
     return boxes, classes, scores
 
 def draw(image, boxes, scores, classes):
-    # for box, score, cl in zip(boxes, scores, classes):
-    #     top, left, right, bottom = [int(_b) for _b in box]
-    #     # print("%s @ (%d %d %d %d) %.3f" % (CLASSES[cl], top, left, right, bottom, score))
-    results = []
     for box, score, cl in zip(boxes, scores, classes):
         top, left, right, bottom = [int(_b) for _b in box]
-        target_id = f"{CLASSES[cl]}_{int(top)}_{int(left)}"  # 用坐标生成唯一ID
-        results.append({"id": target_id, "classes": CLASSES[cl]})
-        
+        # print("%s @ (%d %d %d %d) %.3f" % (CLASSES[cl], top, left, right, bottom, score))
         cv2.rectangle(image, (top, left), (right, bottom), (255, 0, 0), 2)
         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
                     (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
@@ -300,72 +293,24 @@ def process_image(image, outputs, coco_helper):
     # input_data.append(np.transpose(input0_data, (2, 3, 0, 1)))
     # input_data.append(np.transpose(input1_data, (2, 3, 0, 1)))
     # input_data.append(np.transpose(input2_data, (2, 3, 0, 1)))
-    global confirmed_targets
-    current_time = time.time()
-    
-    # 1. 处理当前帧检测结果
+
     boxes, classes, scores = post_process(outputs)
-    current_frame_targets = set()  # 记录当前帧检测到的目标ID
 
+    # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    # if boxes is not None:
+    #     draw(image, boxes, scores, classes)
+    detection_results = []
     if boxes is not None:
-        real_boxes = coco_helper.get_real_box(boxes)  # 获取调整后的bbox
-        for box, cl, score in zip(real_boxes, classes, scores):
-            class_name = CLASSES_CHINESE[CLASSES[cl]]
-            target_id = f"{class_name}_{int(box[0])}_{int(box[1])}"  # 用类别+坐标生成唯一ID
-            current_frame_targets.add(target_id)
-            
-            # 更新目标最后出现时间
-            if target_id in confirmed_targets:
-                confirmed_targets[target_id]["last_seen"] = current_time
-            else:
-                # 新目标：初始化记录（但尚未确认）
-                confirmed_targets[target_id] = {
-                    "classes": class_name,
-                    "last_seen": current_time,
-                    "confirmed": False,
-                    "bbox": box  # 保存bbox坐标
-                }
-
-    # 2. 更新确认状态（滑动窗口逻辑）
-    for target_id in list(confirmed_targets.keys()):
-        # 如果目标在当前帧被检测到，增加计数
-        if target_id in current_frame_targets:
-            if not confirmed_targets[target_id]["confirmed"]:
-                # 滑动窗口统计（示例：最近5帧出现3次则确认）
-                if "detection_count" not in confirmed_targets[target_id]:
-                    confirmed_targets[target_id]["detection_count"] = 1
-                else:
-                    confirmed_targets[target_id]["detection_count"] += 1
-                
-                # 满足确认条件（例如：5帧内出现3次）
-                if confirmed_targets[target_id]["detection_count"] >= 3:
-                    confirmed_targets[target_id]["confirmed"] = True
-        else:
-            # 当前帧未检测到目标：超时检查
-            if (current_time - confirmed_targets[target_id]["last_seen"]) > TARGET_TIMEOUT:
-                del confirmed_targets[target_id]  # 超时删除
-
-    # 3. 绘制所有已确认的目标
-    for target_id, target_info in confirmed_targets.items():
-        if target_info["confirmed"]:
-            box = target_info["bbox"]
-            class_name = target_info["classes"]
-            # 绘制边界框
-            cv2.rectangle(image, 
-                         (int(box[0]), int(box[1])), 
-                         (int(box[2]), int(box[3])), 
-                         (255, 0, 0), 2)
-            # 绘制标签
-            cv2.putText(image, f"{class_name}", 
-                        (int(box[0]), int(box[1]) - 6), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    # 4. 生成右侧标签列表（仅显示已确认的目标）
-    confirmed_list = [{"classes": info["classes"]} 
-                     for _, info in confirmed_targets.items() if info["confirmed"]]
-    image = add_detection_list_to_image(image=image, detection_list=confirmed_list)
-
-    return image, confirmed_list if confirmed_list else None
+        draw(image, coco_helper.get_real_box(boxes), scores, classes)
+        for cl in classes:
+            detection_results.append({
+                'classes': CLASSES_CHINESE[CLASSES[cl]]}
+                )
+        image = add_detection_list_to_image(image=image, detection_list=detection_results)
+        return image, detection_results
+    else:
+        image = add_detection_list_to_image(image=image, detection_list=detection_results)
+        return image, None
         
 def add_detection_list_to_image(image, detection_list, add_width=480,
                                background_color=(0, 0, 0),  # 深灰色背景
