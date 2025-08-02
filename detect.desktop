@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Terminal=true
+Exec=/home/cat/programs/rknn-multi-threaded/model_detect.sh
+Name=detect
+Comment=detects
+Icon=utilities-terminal
+Categories=Development;

@@ -3,7 +3,7 @@ import time
 
 import cv2
 import numpy as np
-
+from rknn_image import process_image
 OBJ_THRESH, NMS_THRESH, IMG_SIZE = 0.25, 0.45, 640
 
 CLASSES = ("person", "bicycle", "car", "motorbike ", "aeroplane ", "bus ", "train", "truck ", "boat", "traffic light",
@@ -198,39 +198,53 @@ def letterbox(im, new_shape=(640, 640), color=(0, 0, 0)):
     return im
     # return im, ratio, (dw, dh)
 
-def myFunc(rknn_lite, IMG):
-    IMG = cv2.cvtColor(IMG, cv2.COLOR_BGR2RGB)
-    # 等比例缩放
-    # IMG = letterbox(IMG)
-    # 强制放缩
-    IMG = cv2.resize(IMG, (IMG_SIZE, IMG_SIZE))
+def myFunc(rknn_lite, IMG, co_helper):
+    # IMG = cv2.cvtColor(IMG, cv2.COLOR_BGR2RGB)
+    # # 等比例缩放
+    # # IMG = letterbox(IMG)
+    # # 强制放缩
+    # IMG = cv2.resize(IMG, (IMG_SIZE, IMG_SIZE))
 
-    input_data = IMG.transpose((2, 0, 1))
-    input_data = input_data.reshape(1, *input_data.shape).astype(np.float32)
-    input_data = input_data / 255.
-
+    # input_data = IMG.transpose((2, 0, 1))
+    # input_data = input_data.reshape(1, *input_data.shape).astype(np.float32)
+    # input_data = input_data / 255.
+    img_src = IMG
+    pad_color = (0,0,0)
+    img_pre = co_helper.letter_box(im=img_src.copy(), new_shape=IMG_SIZE, pad_color=pad_color)
+    img_pre = np.expand_dims(img_pre, axis=0)
     try:
         start_time = time.time()
-        outputs = rknn_lite.inference(inputs=[input_data])
+        outputs = rknn_lite.inference(inputs=[img_pre])
         print("inference time: ", time.time() - start_time)
+        frame, detection_results = process_image(img_src, outputs, co_helper)
     except Exception as e:
         print("error: ", e)
+    # if frame is not None:
+    #     end_time = time.time()
+    #     elapsed_time = end_time - self.start_time
+    #     if elapsed_time > 1:  # 每秒更新一次帧率
+    #         fps = frame_count / elapsed_time
+    #         # 重置计数器和时间戳
+    #         self.frame_count = 0
+    #         self.start_time = time.time()
+    #     fps_text = f"FPS: {int(self.fps)}"
+    #     cv2.putText(self.frame, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-    if outputs is None:
-        return IMG
+    # if outputs is None:
+    #     return IMG
 
-    input0_data = outputs[0].reshape([3, -1]+list(outputs[0].shape[-2:]))
-    input1_data = outputs[1].reshape([3, -1]+list(outputs[1].shape[-2:]))
-    input2_data = outputs[2].reshape([3, -1]+list(outputs[2].shape[-2:]))
+    # input0_data = outputs[0].reshape([3, -1]+list(outputs[0].shape[-2:]))
+    # input1_data = outputs[1].reshape([3, -1]+list(outputs[1].shape[-2:]))
+    # input2_data = outputs[2].reshape([3, -1]+list(outputs[2].shape[-2:]))
 
-    input_data = list()
-    input_data.append(np.transpose(input0_data, (2, 3, 0, 1)))
-    input_data.append(np.transpose(input1_data, (2, 3, 0, 1)))
-    input_data.append(np.transpose(input2_data, (2, 3, 0, 1)))
+    # input_data = list()
+    # input_data.append(np.transpose(input0_data, (2, 3, 0, 1)))
+    # input_data.append(np.transpose(input1_data, (2, 3, 0, 1)))
+    # input_data.append(np.transpose(input2_data, (2, 3, 0, 1)))
 
-    boxes, classes, scores = yolov5_post_process(input_data)
+    # boxes, classes, scores = yolov5_post_process(input_data)
 
-    IMG = cv2.cvtColor(IMG, cv2.COLOR_RGB2BGR)
-    if boxes is not None:
-        draw(IMG, boxes, scores, classes)
-    return IMG
+    # IMG = cv2.cvtColor(IMG, cv2.COLOR_RGB2BGR)
+    # if boxes is not None:
+        # draw(IMG, boxes, scores, classes)
+    return frame
