@@ -31,9 +31,6 @@ confirmed_targets = manager.dict()  # 格式: {"目标ID": {"classes": "person",
 TARGET_TIMEOUT = 10.0
 
 
-# 全局目标ID计数器
-target_id_counter = 0
-
 class TargetTracker:
     """目标跟踪器类，实现目标的确认、持久化和超时管理"""
     
@@ -93,10 +90,20 @@ class TargetTracker:
         return best_match_id
     
     def generate_target_id(self, class_name, box):
-        """生成目标ID"""
-        global target_id_counter
-        target_id_counter += 1
-        return f"{class_name}_{int(box[0])}_{int(box[1])}_{target_id_counter:04d}"
+        """生成基于位置的目标ID，避免重复"""
+        # 计算边界框中心点
+        center_x = (box[0] + box[2]) / 2
+        center_y = (box[1] + box[3]) / 2
+        
+        # 将中心点量化到网格中，减少微小位移的影响
+        grid_size = 40  # 网格大小，调整这个值来控制位置敏感度
+        grid_x = int(center_x // grid_size) * grid_size
+        grid_y = int(center_y // grid_size) * grid_size
+        
+        # 基于类别和网格位置生成稳定的ID
+        # 使用简单的数值组合而不是hash，保证可读性
+        id_suffix = f"{int(grid_x):03d}{int(grid_y):03d}"[-4:]  # 取后4位数字
+        return f"{class_name}_{grid_x}_{grid_y}_{id_suffix}"
     
     def update(self, detections, current_time):
         """更新跟踪器状态
@@ -182,9 +189,9 @@ class TargetTracker:
         """获取需要持久化显示的目标列表"""
         persistent_targets = []
         
-        print(f"DEBUG: tracked_targets count: {len(self.tracked_targets)}")
+        # print(f"DEBUG: tracked_targets count: {len(self.tracked_targets)}")
         for target_id, target_info in self.tracked_targets.items():
-            print(f"DEBUG: target {target_id}, confirmed: {target_info.get('confirmed', False)}")
+            # print(f"DEBUG: target {target_id}, confirmed: {target_info.get('confirmed', False)}")
             if target_info['confirmed']:
                 persistent_targets.append({
                     'id': target_id,
@@ -194,7 +201,7 @@ class TargetTracker:
                     'last_seen': target_info['last_seen']
                 })
         
-        print(f"DEBUG: persistent_targets count: {len(persistent_targets)}")
+        # print(f"DEBUG: persistent_targets count: {len(persistent_targets)}")
         return persistent_targets
     
     def get_all_targets(self):
@@ -202,8 +209,8 @@ class TargetTracker:
         return dict(self.tracked_targets)
 
 
-# 全局跟踪器实例 - 大幅降低确认门槛，使目标更容易被确认
-target_tracker = TargetTracker(confirmation_window=3, min_confirmations=1, persistence_timeout=10.0, iou_threshold=0.1) 
+# 全局跟踪器实例 - 缩短超时时间
+target_tracker = TargetTracker(confirmation_window=10, min_confirmations=5, persistence_timeout=1.0, iou_threshold=0.7) 
 
 # The follew two param is for map test
 # OBJ_THRESH = 0.001
@@ -564,14 +571,21 @@ def process_image(image, outputs, coco_helper):
 
     # 5. 生成右侧标签列表 - 使用跟踪器的持久化目标，添加ID信息
     confirmed_list = []
+    current_time_threshold = current_time - 0.5  # 当前帧的时间阈值（0.5秒内）
+    
     for target in persistent_targets:
         target_id = target['id']
         display_id = target_id.split('_')[-1][-4:]  # 生成简短显示ID
+        
+        # 判断是否为当前帧的目标
+        is_current_frame = target['last_seen'] >= current_time_threshold
+        
         confirmed_list.append({
             "classes": CLASSES_CHINESE.get(target['classes'], target['classes']),
             "score": target['score'],
             "last_seen": target['last_seen'],
-            "display_id": display_id  # 添加显示ID
+            "display_id": display_id,  # 添加显示ID
+            "is_current_frame": is_current_frame  # 标记是否为当前帧
         })
     
     # 如果跟踪器没有目标，则显示当前帧检测结果作为备选
@@ -584,7 +598,8 @@ def process_image(image, outputs, coco_helper):
                 "classes": chinese_name,
                 "score": score,
                 "last_seen": current_time,
-                "display_id": f"{i+1:04d}"  # 临时ID
+                "display_id": f"{i+1:04d}",  # 临时ID
+                "is_current_frame": True
             })
     image = add_detection_list_to_image(image=image, detection_list=confirmed_list)
 
@@ -677,9 +692,10 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
         title_font = ImageFont.load_default()
         item_font = ImageFont.load_default()
     
-    # 绘制标题 - 添加核准数量
-    confirmed_count = len(detection_list)
-    title_with_count = f"{title} 核准{confirmed_count}个"
+    # 绘制标题 - 显示当前帧的确认目标数量
+    current_frame_confirmed = len([item for item in detection_list 
+                                 if item.get('is_current_frame', False)])
+    title_with_count = f"{title} 核准{current_frame_confirmed}个"
     draw.text((w + margin, padding), title_with_count, font=title_font, fill=tuple(title_color[::-1]))
     
     # 绘制分隔线

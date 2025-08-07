@@ -209,16 +209,19 @@ def myFunc(rknn_lite, IMG, co_helper):
     # input_data = input_data.reshape(1, *input_data.shape).astype(np.float32)
     # input_data = input_data / 255.
     img_src = IMG
+    frame = img_src  # 初始化frame变量，避免未定义错误
+    
     pad_color = (0,0,0)
     img_pre = co_helper.letter_box(im=img_src.copy(), new_shape=IMG_SIZE, pad_color=pad_color)
     img_pre = np.expand_dims(img_pre, axis=0)
     try:
         start_time = time.time()
         outputs = rknn_lite.inference(inputs=[img_pre])
-        print("inference time: ", time.time() - start_time)
+        # print("inference time: ", time.time() - start_time)
         frame, detection_results = process_image(img_src, outputs, co_helper)
     except Exception as e:
         print("error: ", e)
+        frame = img_src  # 发生异常时返回原始图像
     # if frame is not None:
     #     end_time = time.time()
     #     elapsed_time = end_time - self.start_time

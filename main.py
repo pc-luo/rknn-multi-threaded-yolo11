@@ -4,8 +4,8 @@ from rknnpool import rknnPoolExecutor
 # 图像处理函数，实际应用过程中需要自行修改
 from func import myFunc
 from coco_utils import COCO_test_helper
-# cap = cv2.VideoCapture('./720p60hz.mp4')
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture('./720p60hz.mp4')
+# cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)
 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
