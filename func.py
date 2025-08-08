@@ -3,7 +3,8 @@ import time
 
 import cv2
 import numpy as np
-from rknn_image import process_image
+from rknn_image import process_image, CLASSES_CHINESE
+from PIL import Image, ImageDraw, ImageFont
 OBJ_THRESH, NMS_THRESH, IMG_SIZE = 0.25, 0.45, 640
 
 CLASSES = ("person", "bicycle", "car", "motorbike ", "aeroplane ", "bus ", "train", "truck ", "boat", "traffic light",
@@ -218,7 +219,18 @@ def myFunc(rknn_lite, IMG, co_helper):
         start_time = time.time()
         outputs = rknn_lite.inference(inputs=[img_pre])
         # print("inference time: ", time.time() - start_time)
-        frame, detection_results = process_image(img_src, outputs, co_helper)
+        frame, detection_results = process_image(img_src, outputs, co_helper, overlay_mode=True, add_detection_list=False)
+        
+        # 创建拼接图像（左侧为处理后的图像，右侧为检测列表）
+        # 调整图像大小
+        h, w = img_src.shape[:2]
+        left_img = cv2.resize(frame, (w//2, h))
+        
+        # 创建右侧检测列表图像
+        right_img = create_detection_list_image(detection_results, w//2, h)
+        
+        # 水平拼接两个图像
+        frame = np.hstack([left_img, right_img])
     except Exception as e:
         print("error: ", e)
         frame = img_src  # 发生异常时返回原始图像
@@ -248,6 +260,69 @@ def myFunc(rknn_lite, IMG, co_helper):
     # boxes, classes, scores = yolov5_post_process(input_data)
 
     # IMG = cv2.cvtColor(IMG, cv2.COLOR_RGB2BGR)
-    # if boxes is not None:
-        # draw(IMG, boxes, scores, classes)
     return frame
+
+def create_detection_list_image(detection_results, width, height):
+    """创建检测目标列表图像"""
+    # 创建一个黑色背景的图像
+    list_img = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # 转换为PIL图像以便绘制中文
+    img_pil = Image.fromarray(cv2.cvtColor(list_img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+    
+    # 尝试加载中文字体，如果失败则使用默认字体
+    try:
+        # 这里使用一个常见的中文字体路径，你可能需要根据你的系统调整
+        font_path = "/home/cat/programs/rknn-multi-threaded/simhei.ttf"
+        title_font = ImageFont.truetype(font_path, 24)
+        item_font = ImageFont.truetype(font_path, 20)
+        large_font = ImageFont.truetype(font_path, 28)
+    except:
+        # 如果无法加载中文字体，则使用默认字体
+        title_font = ImageFont.load_default()
+        item_font = ImageFont.load_default()
+        large_font = ImageFont.load_default()
+    
+    # 如果有检测结果，绘制检测目标列表
+    if detection_results:
+        # 添加标题
+        title = "检测目标列表"
+        title_with_count = f"{title} 核准{len(detection_results)}个"
+        draw.text((10, 20), title_with_count, font=title_font, fill=(255, 255, 255))
+        
+        # 绘制分隔线
+        draw.line([(10, 50), (width - 10, 50)], fill=(200, 200, 200), width=1)
+        
+        # 绘制每个检测目标
+        start_y = 70
+        for i, det in enumerate(detection_results):
+            if i >= 10:  # 最多显示10个目标
+                break
+                
+            # 计算位置
+            row = i // 1
+            col = i % 1
+            x = 10 + col * (width // 2 - 20)
+            y = start_y + row * 30
+            
+            # 绘制目标信息
+            class_name = det.get('classes', '未知')
+            score = det.get('score', 0)
+            display_id = det.get('display_id', f'{i+1:04d}')
+            text = f"ID{display_id} {class_name} {score:.2f}"
+            
+            # 绘制文本
+            draw.text((x, y), text, font=item_font, fill=(200, 200, 200))
+        
+        # 添加总计信息
+        total_text = f"总计: {len(detection_results)} 个已确认目标"
+        draw.text((10, height - 30), total_text, font=item_font, fill=(255, 255, 255))
+    else:
+        # 没有检测结果时显示提示文本
+        draw.text((20, height // 2 - 15), "暂无确认目标", font=large_font, fill=(255, 255, 255))
+    
+    # 转换回OpenCV格式
+    list_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    
+    return list_img

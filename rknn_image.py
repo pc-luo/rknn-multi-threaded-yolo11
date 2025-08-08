@@ -31,6 +31,9 @@ confirmed_targets = manager.dict()  # 格式: {"目标ID": {"classes": "person",
 TARGET_TIMEOUT = 10.0
 
 
+# 简单的ID计数器
+next_target_id = 1
+
 class TargetTracker:
     """目标跟踪器类，实现目标的确认、持久化和超时管理"""
     
@@ -90,83 +93,115 @@ class TargetTracker:
         return best_match_id
     
     def generate_target_id(self, class_name, box):
-        """生成基于位置的目标ID，避免重复"""
+        """基于坐标生成稳定的目标ID"""
         # 计算边界框中心点
         center_x = (box[0] + box[2]) / 2
         center_y = (box[1] + box[3]) / 2
         
-        # 将中心点量化到网格中，减少微小位移的影响
-        grid_size = 40  # 网格大小，调整这个值来控制位置敏感度
-        grid_x = int(center_x // grid_size) * grid_size
-        grid_y = int(center_y // grid_size) * grid_size
-        
-        # 基于类别和网格位置生成稳定的ID
-        # 使用简单的数值组合而不是hash，保证可读性
-        id_suffix = f"{int(grid_x):03d}{int(grid_y):03d}"[-4:]  # 取后4位数字
-        return f"{class_name}_{grid_x}_{grid_y}_{id_suffix}"
+        # 直接使用中心坐标作为ID，确保位置相关性
+        return f"{class_name}_{int(center_x):03d}_{int(center_y):03d}"
     
     def update(self, detections, current_time):
-        """更新跟踪器状态
+        """更新跟踪器状态 - 基于锚点位置的目标确认策略
         
         Args:
             detections: 当前帧的检测结果 [(box, class_name, score), ...]
             current_time: 当前时间戳
         """
-        # 更新的目标ID列表
-        updated_target_ids = set()
+        # 已处理的检测结果索引，避免一个检测被多个目标匹配
+        processed_detections = set()
         
-        # 1. 处理当前帧的检测
-        for box, class_name, score in detections:
-            # 查找最佳匹配
-            matched_id = self.find_best_match(box, class_name, current_time)
+        # 1. 更新现有目标：在IOU范围内的检测归并到现有目标
+        for target_id, target_info in list(self.tracked_targets.items()):
+            if not target_info.get('confirmed', False):
+                continue
+                
+            best_detection_idx = None
+            best_score = 0.0
             
-            if matched_id:
-                # 更新现有目标 - 修复多进程字典更新问题
-                target_info = dict(self.tracked_targets[matched_id])  # 创建副本
+            # 找到与当前目标最匹配的检测结果
+            for i, (box, class_name, score) in enumerate(detections):
+                if i in processed_detections or class_name != target_info['class_name']:
+                    continue
+                    
+                iou_score = self.calculate_iou(box, target_info['bbox'])
+                if iou_score > self.iou_threshold and iou_score > best_score:
+                    best_score = iou_score
+                    best_detection_idx = i
+            
+            # 如果找到匹配的检测，更新目标信息
+            if best_detection_idx is not None:
+                box, class_name, score = detections[best_detection_idx]
+                processed_detections.add(best_detection_idx)
+                
+                # 更新目标信息，但保持原始锚点ID不变
+                target_info_copy = dict(target_info)
+                target_info_copy.update({
+                    'bbox': box,
+                    'score': score,
+                    'last_seen': current_time
+                })
+                self.tracked_targets[target_id] = target_info_copy
+                
+                # 更新检测历史
+                if target_id not in self.detection_history:
+                    self.detection_history[target_id] = deque(maxlen=self.confirmation_window)
+                self.detection_history[target_id].append(current_time)
+        
+        # 2. 处理未匹配的检测：创建新的锚点目标（但需要多帧验证）
+        for i, (box, class_name, score) in enumerate(detections):
+            if i in processed_detections:
+                continue
+                
+            # 基于首次检测位置生成锚点ID
+            anchor_id = self.generate_target_id(class_name, box)
+            
+            # 检查是否已存在相同锚点ID的目标（可能是之前未确认的）
+            if anchor_id in self.tracked_targets:
+                # 更新现有未确认目标
+                target_info = dict(self.tracked_targets[anchor_id])
                 target_info.update({
                     'bbox': box,
-                    'last_seen': current_time,
                     'score': score,
+                    'last_seen': current_time,
                     'detection_count': target_info.get('detection_count', 0) + 1
                 })
-                self.tracked_targets[matched_id] = target_info  # 重新赋值整个字典
-                updated_target_ids.add(matched_id)
+                self.tracked_targets[anchor_id] = target_info
             else:
-                # 创建新目标
-                target_id = self.generate_target_id(class_name, box)
-                self.tracked_targets[target_id] = {
+                # 创建新的锚点目标，初始为未确认状态
+                self.tracked_targets[anchor_id] = {
                     'class_name': class_name,
                     'bbox': box,
                     'score': score,
                     'first_seen': current_time,
                     'last_seen': current_time,
-                    'confirmed': False,
-                    'detection_count': 1,
-                    'confirmed_at': None
+                    'confirmed': False,  # 需要多帧验证
+                    'confirmed_at': None,
+                    'detection_count': 1
                 }
-                updated_target_ids.add(target_id)
-        
-        # 2. 更新检测历史和确认状态
-        for target_id in updated_target_ids:
-            target = self.tracked_targets[target_id]
             
             # 更新检测历史
-            if target_id not in self.detection_history:
-                self.detection_history[target_id] = deque(maxlen=self.confirmation_window)
-            self.detection_history[target_id].append(current_time)
+            if anchor_id not in self.detection_history:
+                self.detection_history[anchor_id] = deque(maxlen=self.confirmation_window)
+            self.detection_history[anchor_id].append(current_time)
             
-            # 检查确认条件 - 简化逻辑：立即确认所有新检测到的目标
-            if not target['confirmed']:
-                # 修复多进程字典更新问题
-                target_info = dict(self.tracked_targets[target_id])
-                target_info['confirmed'] = True
-                target_info['confirmed_at'] = current_time
-                self.tracked_targets[target_id] = target_info
+            # 检查确认条件：多帧验证
+            target_info = self.tracked_targets[anchor_id]
+            if not target_info['confirmed']:
+                detection_count = len(self.detection_history[anchor_id])
+                if detection_count >= self.min_confirmations:
+                    # 达到确认条件，设为已确认
+                    target_info_copy = dict(target_info)
+                    target_info_copy.update({
+                        'confirmed': True,
+                        'confirmed_at': current_time
+                    })
+                    self.tracked_targets[anchor_id] = target_info_copy
         
         # 3. 清理超时目标
         self.cleanup_timeout_targets(current_time)
         
-        # 4. 返回持久化显示的目标列表
+        # 4. 返回已确认的目标列表
         return self.get_persistent_targets()
     
     def cleanup_timeout_targets(self, current_time):
@@ -181,6 +216,7 @@ class TargetTracker:
                 targets_to_remove.append(target_id)
         
         for target_id in targets_to_remove:
+            # 从跟踪字典中移除
             del self.tracked_targets[target_id]
             if target_id in self.detection_history:
                 del self.detection_history[target_id]
@@ -480,7 +516,7 @@ def find_closest_target(box, confirmed_targets, threshold=50):
                 return target_id
     return None
 
-def process_image(image, outputs, coco_helper):
+def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_list=True):
     """
     处理图像并更新目标跟踪器
     
@@ -601,7 +637,11 @@ def process_image(image, outputs, coco_helper):
                 "display_id": f"{i+1:04d}",  # 临时ID
                 "is_current_frame": True
             })
-    image = add_detection_list_to_image(image=image, detection_list=confirmed_list)
+    
+    # 只在需要时添加检测列表到图像右侧
+    # 使用覆盖模式将检测结果覆盖在原始图像上，而不是拼接
+    if add_detection_list:
+        image = add_detection_list_to_image(image=image, detection_list=confirmed_list, overlay_mode=overlay_mode)
 
     return image, confirmed_list if confirmed_list else None
         
@@ -610,9 +650,10 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
                                title_color=(255, 255, 255),    # 白色标题
                                text_color=(200, 200, 200),     # 浅灰色文字
                                highlight_color=(255, 255, 0),  # 黄色高亮
-                               title="检测目标列表"):
+                               title="检测目标列表",
+                               overlay_mode=False):
     """
-    在图像右侧添加纯色背景和持久化检测对象列表
+    在图像右侧添加纯色背景和持久化检测对象列表，或者以覆盖模式显示
     
     参数:
         image: 输入图像
@@ -623,22 +664,44 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
         text_color: 文字颜色 (B, G, R)
         highlight_color: 高亮颜色 (B, G, R)
         title: 标题文本
+        overlay_mode: 是否使用覆盖模式（True: 覆盖在原始图像上, False: 拼接在右侧）
     """
     import time
     h, w = image.shape[:2]
     
-    # 创建新图像
-    new_w = w + add_width
-    new_h = h
-    new_img = np.zeros((new_h, new_w, 3), dtype=np.uint8)
-    new_img[:, :w] = image
-    new_img[:, w:] = background_color
+    if overlay_mode:
+        # 覆盖模式：在原始图像的半透明背景上显示信息
+        # 创建一个半透明的覆盖层
+        overlay = image.copy()
+        cv2.rectangle(overlay, (w - add_width, 0), (w, h), background_color, -1)
+        # 添加半透明效果
+        cv2.addWeighted(overlay, 0.7, image, 0.3, 0, image)
+        new_img = image
+        display_w = w  # 显示宽度为原始图像宽度
+    else:
+        # 拼接模式：在图像右侧添加区域
+        # 创建新图像
+        new_w = w + add_width
+        new_h = h
+        new_img = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+        new_img[:, :w] = image
+        new_img[:, w:] = background_color
+        display_w = new_w  # 显示宽度为原始图像+扩展区域
     
     # 设置字体
     cv2_font = cv2.FONT_HERSHEY_SIMPLEX
     
     if not detection_list:
         # 显示"暂无确认目标"
+        if overlay_mode:
+            # 覆盖模式下在图像右侧绘制
+            text_x = w - add_width + 20
+            text_y = h // 2 - 20
+        else:
+            # 拼接模式下在扩展区域绘制
+            text_x = w + 20
+            text_y = h // 2 - 20
+            
         img_pil = Image.fromarray(cv2.cvtColor(new_img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img_pil)
         try:
@@ -647,7 +710,7 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
             font = ImageFont.load_default()
         
         text = "暂无确认目标"
-        draw.text((w + 20, h//2 - 20), text, font=font, fill=tuple(title_color[::-1]))
+        draw.text((text_x, text_y), text, font=font, fill=tuple(title_color[::-1]))
         new_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
         return new_img
     
@@ -657,9 +720,21 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
     margin = 20
     padding = 15
     
-    # 预先计算表格布局参数
-    available_height = new_h - padding - title_height - 60  # 预留底部空间
-    available_width = add_width - 2 * margin
+    # 根据模式计算可用空间
+    if overlay_mode:
+        # 覆盖模式下，可用宽度是覆盖区域的宽度
+        available_width = add_width - 2 * margin
+        # 可用高度是整个图像高度
+        available_height = h - padding - title_height - 60  # 预留底部空间
+        # 起始x坐标在覆盖区域内
+        start_x = w - add_width
+    else:
+        # 拼接模式下，可用宽度是扩展区域的宽度
+        available_width = add_width - 2 * margin
+        # 可用高度是整个图像高度
+        available_height = h - padding - title_height - 60  # 预留底部空间
+        # 起始x坐标在原始图像右侧
+        start_x = w
     
     # 每个格子的固定尺寸
     cell_width = 200  # 每个格子宽度
@@ -696,11 +771,11 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
     current_frame_confirmed = len([item for item in detection_list 
                                  if item.get('is_current_frame', False)])
     title_with_count = f"{title} 核准{current_frame_confirmed}个"
-    draw.text((w + margin, padding), title_with_count, font=title_font, fill=tuple(title_color[::-1]))
+    draw.text((start_x + margin, padding), title_with_count, font=title_font, fill=tuple(title_color[::-1]))
     
     # 绘制分隔线
-    draw.line([(w + margin, padding + title_height - 10), 
-               (w + add_width - margin, padding + title_height - 10)], 
+    draw.line([(start_x + margin, padding + title_height - 10), 
+               (start_x + add_width - margin, padding + title_height - 10)], 
               fill=tuple(text_color[::-1]), width=2)
     
     # 显示目标列表 - 使用表格式布局
@@ -712,11 +787,11 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
         col = index % max_columns
         
         # 计算格子的实际像素位置
-        cell_x = w + margin + col * cell_width
+        cell_x = start_x + margin + col * cell_width
         cell_y = start_y + row * cell_height
         
         # 跳过超出可显示区域的项目
-        if cell_y + cell_height > new_h - 60:  # 预留底部空间
+        if cell_y + cell_height > h - 60:  # 预留底部空间
             break
         
         # 计算时间差
@@ -747,7 +822,7 @@ def add_detection_list_to_image(image, detection_list, add_width=480,
     # 添加底部信息
     info_text = f"总计: {len(detection_list)} 个已确认目标"
     info_font = item_font
-    draw.text((w + margin, new_h - margin - 30), info_text, font=info_font, fill=tuple(title_color[::-1]))
+    draw.text((start_x + margin, h - margin - 30), info_text, font=info_font, fill=tuple(title_color[::-1]))
     
     # 转换回OpenCV格式
     new_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
