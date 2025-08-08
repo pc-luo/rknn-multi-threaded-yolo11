@@ -217,8 +217,8 @@ class DetectionApp:
         # 尝试加载中文字体
         try:
             # 根据您的系统路径调整字体文件路径
-            font = ImageFont.truetype("simhei.ttf", 20)
-            label_font = ImageFont.truetype("simhei.ttf", 16)
+            font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 20)
+            label_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 16)
         except:
             # 如果无法加载中文字体，则使用默认字体
             font = ImageFont.load_default()
@@ -283,9 +283,9 @@ class DetectionApp:
         # 尝试加载中文字体
         try:
             # 根据您的系统路径调整字体文件路径
-            title_font = ImageFont.truetype("simhei.ttf", 24)
-            item_font = ImageFont.truetype("simhei.ttf", 20)
-            small_font = ImageFont.truetype("simhei.ttf", 16)
+            title_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 24)
+            item_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 20)
+            small_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 16)
         except:
             # 如果无法加载中文字体，则使用默认字体
             title_font = ImageFont.load_default()
