@@ -224,8 +224,8 @@ def myFunc(rknn_lite, IMG, co_helper):
         # 创建拼接图像（左侧为处理后的图像，右侧为检测列表）
         # 调整图像大小
         h, w = img_src.shape[:2]
-        left_img = cv2.resize(frame, (w//2, h))
-        
+        # left_img = cv2.resize(frame, (w//2, h))
+        left_img = frame
         # 创建右侧检测列表图像
         right_img = create_detection_list_image(detection_results, w//2, h)
         

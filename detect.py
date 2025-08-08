@@ -6,6 +6,7 @@ from collections import defaultdict
 from rknnlite.api import RKNNLite
 from coco_utils import COCO_test_helper
 from func import CLASSES
+from PIL import Image, ImageDraw, ImageFont
 
 # 配置参数
 WINDOW_NAME = "RKNN Object Detection"
@@ -71,20 +72,55 @@ class SimpleDetector:
         # 这里需要根据实际的模型输出格式来解析
         # 简化处理，假设已有process_image函数
         try:
-            from rknn_image import process_image
+            from rknn_image import process_image, CLASSES
             result_frame, detection_results = process_image(img_src, outputs, self.co_helper, overlay_mode=True, add_detection_list=False)
             
             # 提取检测结果
             if detection_results:
                 for det in detection_results:
-                    if len(det) >= 6:  # [x1, y1, x2, y2, class_id, score]
-                        x1, y1, x2, y2, class_id, score = det[:6]
-                        if score > OBJ_THRESH and class_id < len(CLASSES):
-                            detections.append({
-                                'bbox': [x1, y1, x2, y2],
-                                'class_name': CLASSES[int(class_id)].strip(),
-                                'score': float(score)
-                            })
+                    # 从rknn_image.py的process_image函数返回的格式是字典
+                    # 包含"classes", "score", "last_seen", "display_id", "is_current_frame", "bbox"等键
+                    class_name = det.get('classes', 'unknown')
+                    score = det.get('score', 0.0)
+                    bbox = det.get('bbox', [0, 0, 100, 100])  # [x1, y1, x2, y2]
+                    
+                    # 查找类别索引（需要将中文类别名映射回英文类别名）
+                    class_id = -1
+                    # 定义中文到英文的映射
+                    class_map = {
+                        "防护袋": "protective_bag",
+                        "安全帽": "safety_helmet",
+                        "刷子": "brush",
+                        "手机": "mobile_phone",
+                        "防护旗": "protective_flag",
+                        "哨子": "whistle",
+                        "扩音器": "loudhailer",
+                        "钳子": "pliers",
+                        "螺丝刀": "screwdriver",
+                        "万用表": "multimeter",
+                        "背包": "backpack",
+                        "对讲机": "walkie-talkie",
+                        "工具箱": "toolbox",
+                        "探照灯": "spotlight",
+                        "扳手": "wrench",
+                        "医药箱": "medicine_box",
+                        "手套": "glove",
+                        "手电筒": "flashlight"
+                    }
+                    english_class_name = class_map.get(class_name, class_name)
+                    
+                    # 查找英文类别名在CLASSES中的索引
+                    for i, cls in enumerate(CLASSES):
+                        if cls.strip() == english_class_name.strip():
+                            class_id = i
+                            break
+                    
+                    if score > OBJ_THRESH and class_id >= 0:
+                        detections.append({
+                            'bbox': bbox,
+                            'class_name': class_name,  # 保持中文显示
+                            'score': float(score)
+                        })
             
             return result_frame, detections
             
@@ -174,7 +210,19 @@ class DetectionApp:
     
     def draw_detection_results(self, frame, detections):
         """在帧上绘制检测结果"""
-        result_frame = frame.copy()
+        # 将OpenCV图像转换为PIL图像
+        img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil)
+        
+        # 尝试加载中文字体
+        try:
+            # 根据您的系统路径调整字体文件路径
+            font = ImageFont.truetype("simhei.ttf", 20)
+            label_font = ImageFont.truetype("simhei.ttf", 16)
+        except:
+            # 如果无法加载中文字体，则使用默认字体
+            font = ImageFont.load_default()
+            label_font = ImageFont.load_default()
         
         for det in detections:
             bbox = det['bbox']
@@ -182,16 +230,21 @@ class DetectionApp:
             score = det['score']
             
             # 绘制边界框
-            cv2.rectangle(result_frame, 
-                         (int(bbox[0]), int(bbox[1])), 
-                         (int(bbox[2]), int(bbox[3])), 
-                         (0, 255, 0), 2)
+            draw.rectangle([(int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))], 
+                          outline=(0, 255, 0), width=2)
             
             # 绘制标签
             label = f"{class_name} {score:.2f}"
-            cv2.putText(result_frame, label,
-                       (int(bbox[0]), int(bbox[1]) - 10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            # 计算文本位置
+            text_position = (int(bbox[0]), int(bbox[1]) - 20)
+            # 绘制文本背景（可选）
+            # draw.rectangle([text_position, (text_position[0] + 100, text_position[1] + 20)], 
+            #               fill=(0, 0, 0))
+            # 绘制文本
+            draw.text(text_position, label, font=label_font, fill=(0, 255, 0))
+        
+        # 将PIL图像转换回OpenCV格式
+        result_frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
         
         return result_frame
     
@@ -223,16 +276,31 @@ class DetectionApp:
         # 创建一个黑色背景的图像
         list_img = np.zeros((self.frame_height, self.frame_width, 3), dtype=np.uint8)
         
+        # 将OpenCV图像转换为PIL图像
+        img_pil = Image.fromarray(cv2.cvtColor(list_img, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img_pil)
+        
+        # 尝试加载中文字体
+        try:
+            # 根据您的系统路径调整字体文件路径
+            title_font = ImageFont.truetype("simhei.ttf", 24)
+            item_font = ImageFont.truetype("simhei.ttf", 20)
+            small_font = ImageFont.truetype("simhei.ttf", 16)
+        except:
+            # 如果无法加载中文字体，则使用默认字体
+            title_font = ImageFont.load_default()
+            item_font = ImageFont.load_default()
+            small_font = ImageFont.load_default()
+        
         # 如果有检测结果，绘制检测目标列表
         if self.detection_results:
             # 添加标题
             title = "检测目标列表"
             title_with_count = f"{title} 核准{len(self.detection_results)}个"
-            cv2.putText(list_img, title_with_count, (20, 40), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            draw.text((20, 30), title_with_count, font=title_font, fill=(255, 255, 255))
             
             # 绘制分隔线
-            cv2.line(list_img, (20, 50), (self.frame_width - 20, 50), (200, 200, 200), 1)
+            draw.line([(20, 50), (self.frame_width - 20, 50)], fill=(200, 200, 200), width=1)
             
             # 绘制每个检测目标
             start_y = 80
@@ -252,17 +320,17 @@ class DetectionApp:
                 text = f"ID{i+1:04d} {class_name} {score:.2f}"
                 
                 # 绘制文本
-                cv2.putText(list_img, text, (x, y), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                draw.text((x, y), text, font=item_font, fill=(200, 200, 200))
             
             # 添加总计信息
             total_text = f"总计: {len(self.detection_results)} 个已确认目标"
-            cv2.putText(list_img, total_text, (20, self.frame_height - 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            draw.text((20, self.frame_height - 30), total_text, font=small_font, fill=(255, 255, 255))
         else:
             # 没有检测结果时显示提示文本
-            cv2.putText(list_img, "暂无确认目标", (50, self.frame_height // 2), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            draw.text((50, self.frame_height // 2 - 10), "暂无确认目标", font=title_font, fill=(255, 255, 255))
+        
+        # 将PIL图像转换回OpenCV格式
+        list_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
         
         return list_img
     

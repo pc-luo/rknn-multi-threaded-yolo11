@@ -246,7 +246,7 @@ class TargetTracker:
 
 
 # 全局跟踪器实例 - 缩短超时时间
-target_tracker = TargetTracker(confirmation_window=10, min_confirmations=5, persistence_timeout=1.0, iou_threshold=0.7) 
+target_tracker = TargetTracker(confirmation_window=10, min_confirmations=5, persistence_timeout=1.0, iou_threshold=0.2) 
 
 # The follew two param is for map test
 # OBJ_THRESH = 0.001
@@ -605,7 +605,7 @@ def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_
                         (int(box[0]), int(box[1]) - 6), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-    # 5. 生成右侧标签列表 - 使用跟踪器的持久化目标，添加ID信息
+    # 5. 生成右侧标签列表 - 使用跟踪器的持久化目标，添加ID信息和边界框
     confirmed_list = []
     current_time_threshold = current_time - 0.5  # 当前帧的时间阈值（0.5秒内）
     
@@ -621,7 +621,8 @@ def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_
             "score": target['score'],
             "last_seen": target['last_seen'],
             "display_id": display_id,  # 添加显示ID
-            "is_current_frame": is_current_frame  # 标记是否为当前帧
+            "is_current_frame": is_current_frame,  # 标记是否为当前帧
+            "bbox": target['bbox']  # 添加边界框信息
         })
     
     # 如果跟踪器没有目标，则显示当前帧检测结果作为备选
