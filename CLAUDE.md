@@ -20,6 +20,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **rknn_image.py**: 图像处理和目标跟踪
   - `TargetTracker`: 目标跟踪器类，实现目标确认、持久化和超时管理
   - 包含滑动窗口确认机制，避免检测抖动
+  - 使用PIL库绘制中文文本以支持中文显示
+
+- **detect.py**: GUI应用程序，提供可视化界面进行目标检测
+  - `SimpleDetector`: 简单单线程检测器
+  - `DetectionApp`: 主应用程序类，管理UI和检测流程
+  - 使用PIL库绘制中文文本以支持中文显示
 
 - **main.py**: 主执行文件，设置摄像头/视频输入，初始化线程池并运行推理循环
 
@@ -73,9 +79,35 @@ python test_target_tracking.py
 - **IOU匹配**: 基于IOU和距离的目标匹配算法
 - **超时管理**: 10秒无检测后自动清理目标
 
+## 中文显示支持
+
+项目使用PIL库来支持中文文本显示：
+- 在detect.py中，`draw_detection_results`和`create_detection_list_image`函数使用PIL绘制中文文本
+- 在rknn_image.py中，`add_detection_list_to_image`函数使用PIL绘制中文文本
+- 在func.py中，`create_detection_list_image`函数使用PIL绘制中文文本
+- 需要系统中安装中文字体（如simhei.ttf）
+- 如果字体文件不存在，程序会自动回退到默认字体
+
+## 更换检测模型
+
+如果需要更换检测模型，需要更新以下标签对应关系：
+
+1. **rknn_image.py文件**：
+   - `CLASSES`元组：包含模型输出的英文类别标签
+   - `CLASSES_CHINESE`字典：包含英文类别标签到中文显示标签的映射
+
+2. **func.py文件**：
+   - `CLASSES`元组：需要与rknn_image.py中的CLASSES保持一致
+
+3. **detect.py文件**：
+   - `CLASSES`元组：需要与rknn_image.py中的CLASSES保持一致
+   - 中文到英文的映射字典：在`process_detections`函数中的`class_map`字典
+
 ## 开发注意事项
 
 - 修改推理逻辑时主要编辑`func.py`中的`myFunc`函数
 - 目标跟踪参数可在`rknn_image.py`中的`TargetTracker`类中调整
 - 多线程数量需要根据硬件散热能力调整，避免过热
 - NPU核心分配逻辑在`rknnpool.py`的`initRKNN()`函数中
+- 中文显示依赖PIL库和系统字体文件
+- 图像布局逻辑在多个文件中实现，需要保持一致性
