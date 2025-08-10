@@ -34,3 +34,4 @@
 * https://github.com/ultralytics/yolov5
 * https://github.com/rockchip-linux/rknn-toolkit2
 * https://github.com/airockchip/rknn_model_zoo
+* https://github.com/leafqycc/rknn-multi-threaded
