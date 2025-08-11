@@ -305,8 +305,8 @@ class DetectionApp:
             # 绘制每个检测目标
             start_y = 80
             for i, det in enumerate(self.detection_results):
-                if i >= 10:  # 最多显示10个目标
-                    break
+                # if i >= 10:  # 最多显示10个目标
+                #     break
                     
                 # 计算位置
                 row = i // 2
