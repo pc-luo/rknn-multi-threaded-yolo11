@@ -516,7 +516,7 @@ def find_closest_target(box, confirmed_targets, threshold=50):
                 return target_id
     return None
 
-def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_list=True):
+def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_list=True, detect_simple=False):
     """
     处理图像并更新目标跟踪器
     
@@ -534,13 +534,16 @@ def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_
     # 1. 处理当前帧检测结果
     boxes, classes, scores = post_process(outputs)
     detections = []  # 用于跟踪器的检测结果列表
-
     if boxes is not None:
         real_boxes = coco_helper.get_real_box(boxes)  # 获取调整后的bbox
         for box, cl, score in zip(real_boxes, classes, scores):
             class_name = CLASSES[cl]  # 使用英文类名
             detections.append((box, class_name, score))
-
+    if detect_simple:
+        detections_simple = []
+        for det in detections:
+            detections_simple.append({'bbox': det[0], 'classes': det[1], 'score': det[2]})
+        return image, detections_simple
     # 2. 更新目标跟踪器
     persistent_targets = target_tracker.update(detections, current_time)
     
@@ -622,7 +625,7 @@ def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_
             "last_seen": target['last_seen'],
             "display_id": display_id,  # 添加显示ID
             "is_current_frame": is_current_frame,  # 标记是否为当前帧
-            "bbox": target['bbox']  # 添加边界框信息
+            "bbox": target.get('bbox', [0, 0, 100, 100])  # 确保bbox字段存在，提供默认值
         })
     
     # 如果跟踪器没有目标，则显示当前帧检测结果作为备选
@@ -636,7 +639,8 @@ def process_image(image, outputs, coco_helper, overlay_mode=True, add_detection_
                 "score": score,
                 "last_seen": current_time,
                 "display_id": f"{i+1:04d}",  # 临时ID
-                "is_current_frame": True
+                "is_current_frame": True,
+                "bbox": box  # 添加缺失的bbox字段
             })
     
     # 只在需要时添加检测列表到图像右侧

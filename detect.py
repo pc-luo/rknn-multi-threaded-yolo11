@@ -7,7 +7,7 @@ from rknnlite.api import RKNNLite
 from coco_utils import COCO_test_helper
 from func import CLASSES
 from PIL import Image, ImageDraw, ImageFont
-
+from rknn_image import CLASSES_CHINESE
 # 配置参数
 WINDOW_NAME = "RKNN Object Detection"
 modelPath = "/home/cat/programs/rknn-multi-threaded/rknnModel/yolo11m_i8_train.rknn"
@@ -73,7 +73,14 @@ class SimpleDetector:
         # 简化处理，假设已有process_image函数
         try:
             from rknn_image import process_image, CLASSES
-            result_frame, detection_results = process_image(img_src, outputs, self.co_helper, overlay_mode=True, add_detection_list=False)
+            result_frame, detection_results = process_image(img_src, outputs, self.co_helper, overlay_mode=False, add_detection_list=False, detect_simple=True)
+            
+            # 添加调试信息
+            # print(f"Debug: process_image returned {len(detection_results) if detection_results else 0} detections")
+            # if detection_results:
+            #     print(f"Debug: First detection sample: {detection_results[0] if detection_results else None}")
+            # else:
+            #     print("Debug: detection_results is None or empty")
             
             # 提取检测结果
             if detection_results:
@@ -186,11 +193,20 @@ class DetectionApp:
             if not ret:
                 break
             
-            # 检测当前帧
+            # 检测当前帧 - 获取原始帧和检测结果
             result_frame, detections = self.detector.detect_frame(frame)
             
+            # 确保数据同步：重新在原始帧上绘制检测结果
+            if detections:
+                print(f"Debug: Processing frame with {len(detections)} detections")
+                drawn_frame = self.draw_detection_results(frame.copy(), detections)  # 使用帧的副本
+            else:
+                print(f"Debug: No detections in this frame")
+                drawn_frame = frame.copy()
+            
             frames_data.append({
-                'frame': result_frame,
+                'original_frame': frame.copy(),  # 保存原始帧
+                'drawn_frame': drawn_frame,      # 保存绘制了检测框的帧
                 'detections': detections,
                 'detection_count': len(detections),
                 'timestamp': time.time()
@@ -210,6 +226,7 @@ class DetectionApp:
     
     def draw_detection_results(self, frame, detections):
         """在帧上绘制检测结果"""
+        print(f"Debug: draw_detection_results called with {len(detections)} detections")
         # 将OpenCV图像转换为PIL图像
         img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img_pil)
@@ -218,30 +235,43 @@ class DetectionApp:
         try:
             # 根据您的系统路径调整字体文件路径
             font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 20)
-            label_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 16)
+            label_font = ImageFont.truetype("/home/cat/programs/rknn-multi-threaded/simhei.ttf", 20)
         except:
             # 如果无法加载中文字体，则使用默认字体
             font = ImageFont.load_default()
             label_font = ImageFont.load_default()
         
-        for det in detections:
+        for i, det in enumerate(detections):
             bbox = det['bbox']
             class_name = det['class_name']
             score = det['score']
+            print(f"Debug: Drawing detection {i+1}: {class_name} at {bbox}")
             
             # 绘制边界框
             draw.rectangle([(int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3]))], 
-                          outline=(0, 255, 0), width=2)
+                          outline=(0, 0, 255), width=2)
             
             # 绘制标签
-            label = f"{class_name} {score:.2f}"
+            label = f"{i+1:02d} {class_name}"
             # 计算文本位置
-            text_position = (int(bbox[0]), int(bbox[1]) - 20)
-            # 绘制文本背景（可选）
-            # draw.rectangle([text_position, (text_position[0] + 100, text_position[1] + 20)], 
-            #               fill=(0, 0, 0))
+            text_position = (int(bbox[0]), int(bbox[1]) - 25)
+            # 通过字体对象直接获取尺寸（Pillow ≥9.2.0）
+            text_bbox = label_font.getbbox(label)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]# 绘制文本背景（可选）
+            padding = 1  # 左右边距
+            bg_height = text_height + 2  # 上下边距
+
+            # 绘制背景框（自动匹配文本宽度）
+            draw.rectangle(
+                [
+                    (text_position[0] - padding, text_position[1]),  # 左上角（稍高于文字）
+                    (text_position[0] + text_width + padding, text_position[1] + bg_height)  # 右下角
+                ],
+                fill=(0, 0, 255)  # 蓝色背景
+            )
             # 绘制文本
-            draw.text(text_position, label, font=label_font, fill=(0, 255, 0))
+            draw.text(text_position, label, font=label_font, fill=(255, 255, 255))
         
         # 将PIL图像转换回OpenCV格式
         result_frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
@@ -295,33 +325,81 @@ class DetectionApp:
         # 如果有检测结果，绘制检测目标列表
         if self.detection_results:
             # 添加标题
+            margin = 10          # 表格外边距
+            padding = 5          # 单元格内边距
+            line_height = 25     # 行高
+            max_col_width = 200  # 最大列宽（根据字体大小动态调整）
             title = "检测目标列表"
             title_with_count = f"{title} 核准{len(self.detection_results)}个"
-            draw.text((20, 30), title_with_count, font=title_font, fill=(255, 255, 255))
-            
+            draw.text((margin, margin), title_with_count, font=title_font, fill=(255, 255, 255))
+            line_x = margin 
+            line_y = margin * 2 + line_height
             # 绘制分隔线
-            draw.line([(20, 50), (self.frame_width - 20, 50)], fill=(200, 200, 200), width=1)
+            draw.line([(line_x, line_y), (self.frame_width - line_x, line_y)], fill=(200, 200, 200), width=1)
             
             # 绘制每个检测目标
-            start_y = 80
-            for i, det in enumerate(self.detection_results):
-                # if i >= 10:  # 最多显示10个目标
-                #     break
+            # start_y = 80
+            # for i, det in enumerate(self.detection_results):
+            #     # if i >= 10:  # 最多显示10个目标
+            #     #     break
                     
-                # 计算位置
-                row = i // 2
-                col = i % 2
-                x = 20 + col * (self.frame_width // 2 - 30)
-                y = start_y + row * 35
+            #     # 计算位置
+            #     row = i // 2
+            #     col = i % 2
+            #     x = 20 + col * (self.frame_width // 2 - 30)
+            #     y = start_y + row * 35
                 
-                # 绘制目标信息
-                class_name = det['class_name']
+            #     # 绘制目标信息
+            #     class_name = CLASSES_CHINESE[det['class_name']]
+            #     score = det['score']
+            #     text = f"ID{i+1:04d} {class_name} {score:.2f}"
+                
+            #     # 绘制文本
+            #     draw.text((x, y), text, font=item_font, fill=(200, 200, 200))
+
+
+            # 计算可用区域
+            canvas_width, canvas_height = img_pil.size  # 正确形式：(width, height)
+            canvas_height = canvas_height - 100  # 预留底部区域
+            canvas_width = canvas_width - 2 * margin
+            # 动态计算每行能容纳的列数
+            sample_text = "ID0001 测试物品 0.99"  # 样本文本用于计算宽度
+            bbox = draw.textbbox((0, 0), sample_text, font=item_font)  # 返回 (x0, y0, x1, y1)
+            text_width = bbox[2] - bbox[0]
+            cols_per_row = max(1, int(canvas_width // (text_width + 2 * padding)))
+
+            # 绘制表格和内容
+            current_row = 0
+            for i, det in enumerate(self.detection_results):
+                # 计算行列位置
+                col = i % cols_per_row
+                if col == 0 and i > 0:
+                    current_row += 1
+
+                # 计算坐标（考虑边距和内边距）
+                x = margin + col * (canvas_width // cols_per_row)
+                y = line_y + current_row * line_height
+
+                # 如果超出画布高度则停止
+                if y > canvas_height:
+                    print("表格已超出画布高度，已停止绘制。")
+                    break
+
+                # 准备文本内容
+                class_name = CLASSES_CHINESE.get(det['class_name'], det['class_name'])
                 score = det['score']
                 text = f"ID{i+1:04d} {class_name} {score:.2f}"
-                
+
+                # 绘制单元格背景（可选）
+                # text_width = draw.textlength(text, font=item_font)
+                # draw.rectangle(
+                #     [x - padding, y, x + text_width + padding, y + line_height],
+                #     fill=(50, 50, 50, 180)  # 半透明背景
+                # )
+
                 # 绘制文本
                 draw.text((x, y), text, font=item_font, fill=(200, 200, 200))
-            
+
             # 添加总计信息
             total_text = f"总计: {len(self.detection_results)} 个已确认目标"
             draw.text((20, self.frame_height - 30), total_text, font=small_font, fill=(255, 255, 255))
@@ -392,7 +470,8 @@ class DetectionApp:
                 best_frame_data = self.collect_frames_and_detect()
                 
                 if best_frame_data:
-                    self.detected_frame = best_frame_data['frame']
+                    # 使用同步的数据
+                    self.detected_frame = best_frame_data['drawn_frame']  # 使用已绘制检测框的帧
                     self.detection_results = best_frame_data['detections']
                     self.show_detection_result = True  # 切换到检测结果模式
                     print(f"检测完成，找到{len(self.detection_results)}个目标")
